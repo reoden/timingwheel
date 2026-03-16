@@ -7,20 +7,30 @@ type Item[T any] struct {
 	index int
 }
 
+// Index returns the current index of the item in the heap.
+func (item *Item[T]) Index() int {
+	return item.index
+}
+
 // PriorityQueue is a generic priority queue implementation using a binary heap data structure.
 type PriorityQueue[T any] struct {
 	data []*Item[T]
 	cmp  Comparator[T]
 }
 
-// NewPriorityQueue creates a new priority queue.
+// New creates a new priority queue.
 // cmp: Comparison function to determine element priority.
 // Returns: Pointer to the initialized priority queue.
-func NewPriorityQueue[T any](cmp Comparator[T]) *PriorityQueue[T] {
+func New[T any](cmp Comparator[T]) *PriorityQueue[T] {
 	return &PriorityQueue[T]{
 		data: make([]*Item[T], 0),
 		cmp:  cmp,
 	}
+}
+
+// NewPriorityQueue is an alias for New.
+func NewPriorityQueue[T any](cmp Comparator[T]) *PriorityQueue[T] {
+	return New[T](cmp)
 }
 
 // Len returns the number of elements in the queue.

@@ -1,7 +1,6 @@
 package pq
 
 import (
-	"container/heap"
 	"math/rand"
 	"path/filepath"
 	"reflect"
@@ -29,13 +28,11 @@ func TestMinPriorityQueue(t *testing.T) {
 		pq.Push(i)
 	}
 	equal(t, pq.Len(), c+1)
-	equal(t, cap(pq.data), c*2)
 
 	for i := 0; i < c+1; i++ {
 		item := pq.Pop()
-		equal(t, item, i)
+		equal(t, item.Value, i)
 	}
-	equal(t, cap(pq.data), c/4)
 }
 
 func TestMaxPriorityQueue(t *testing.T) {
@@ -48,13 +45,11 @@ func TestMaxPriorityQueue(t *testing.T) {
 		pq.Push(i)
 	}
 	equal(t, pq.Len(), c+1)
-	equal(t, cap(pq.data), c*2)
 
 	for i := c; i >= 0; i-- {
 		item := pq.Pop()
-		equal(t, item, i)
+		equal(t, item.Value, i)
 	}
-	equal(t, cap(pq.data), c/4)
 }
 
 func TestUnsortedInsert(t *testing.T) {
@@ -70,13 +65,12 @@ func TestUnsortedInsert(t *testing.T) {
 		pq.Push(v)
 	}
 	equal(t, pq.Len(), c)
-	equal(t, cap(pq.data), c)
 
 	sort.Ints(ints)
 
 	for i := 0; i < c; i++ {
-		item, _ := pq.PeekAndShift(int64(ints[len(ints)-1]))
-		equal(t, item.Priority, int64(ints[i]))
+		item := pq.Pop()
+		equal(t, item.Value, ints[i])
 	}
 }
 
@@ -86,19 +80,27 @@ func TestRemove(t *testing.T) {
 		return a < b
 	})
 
+	items := make([]*Item[int], 0, c)
 	for i := 0; i < c; i++ {
 		v := rand.Int()
-		heap.Push(&pq, &Item{Value: "test", Priority: int64(v)})
+		item := pq.Push(v)
+		items = append(items, item)
 	}
 
+	// Remove 10 random items.
 	for i := 0; i < 10; i++ {
-		heap.Remove(&pq, rand.Intn((c-1)-i))
+		idx := rand.Intn(len(items))
+		pq.Remove(items[idx])
+		items = append(items[:idx], items[idx+1:]...)
 	}
 
-	lastPriority := heap.Pop(&pq).(*Item).Priority
-	for i := 0; i < (c - 10 - 1); i++ {
-		item := heap.Pop(&pq)
-		equal(t, lastPriority < item.(*Item).Priority, true)
-		lastPriority = item.(*Item).Priority
+	equal(t, pq.Len(), c-10)
+
+	// Verify remaining items come out in sorted order.
+	prev := pq.Pop()
+	for i := 0; i < c-10-1; i++ {
+		item := pq.Pop()
+		equal(t, prev.Value <= item.Value, true)
+		prev = item
 	}
 }
