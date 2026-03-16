@@ -1,10 +1,10 @@
-package timingwheel
+package main
 
 import (
 	"context"
 	"time"
 
-	"github.com/reoden/timewheel/delayqueue"
+	"github.com/reoden/timerwheel/delayqueue"
 )
 
 // scheduler abstracts the driving strategy for the timing wheel.

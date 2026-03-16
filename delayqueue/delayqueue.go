@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/reoden/timewheel/pq"
+	"github.com/reoden/timerwheel/pq"
 )
 
 type Delayed interface {

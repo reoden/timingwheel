@@ -1,4 +1,4 @@
-package timingwheel
+package main
 
 import (
 	"context"
