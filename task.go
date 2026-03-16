@@ -8,7 +8,7 @@ type TimerTask struct {
 	f     func()
 
 	entry *TimerTaskEntry
-	mu    sync.Mutex
+	mu    sync.RWMutex
 }
 
 func newTimerTask(delay int64, f func()) *TimerTask {
@@ -41,7 +41,7 @@ func (t *TimerTask) setEntry(entry *TimerTaskEntry) {
 }
 
 func (t *TimerTask) getEntry() *TimerTaskEntry {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.entry
 }

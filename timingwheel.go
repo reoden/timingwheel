@@ -2,8 +2,6 @@ package timingwheel
 
 import (
 	"sync"
-
-	"github.com/reoden/timewheel/delayqueue"
 )
 
 // TimingWheel is a hierarchical timing wheel.
@@ -15,14 +13,14 @@ type TimingWheel struct {
 	interval    int64 // tick * wheelSize — total time range of this wheel
 	currentTime int64 // current time truncated to tick boundary
 
-	buckets []*Bucket
-	queue   *delayqueue.DelayQueue // shared across all levels
+	buckets   []*Bucket
+	scheduler scheduler // shared across all levels
 
 	overflowWheel *TimingWheel
-	mu            sync.Mutex
+	mu            sync.RWMutex
 }
 
-func newTimingWheel(tick int64, wheelSize int64, startMs int64, queue *delayqueue.DelayQueue) *TimingWheel {
+func newTimingWheel(tick int64, wheelSize int64, startMs int64, sched scheduler) *TimingWheel {
 	buckets := make([]*Bucket, wheelSize)
 	for i := range buckets {
 		buckets[i] = newBucket()
@@ -34,7 +32,7 @@ func newTimingWheel(tick int64, wheelSize int64, startMs int64, queue *delayqueu
 		interval:    tick * wheelSize,
 		currentTime: startMs - (startMs % tick), // truncate to tick boundary
 		buckets:     buckets,
-		queue:       queue,
+		scheduler:   sched,
 	}
 }
 
@@ -46,10 +44,16 @@ func (tw *TimingWheel) add(entry *TimerTaskEntry) bool {
 	if entry.cancelled() {
 		// Task was cancelled, no need to add.
 		return false
-	} else if exp < tw.currentTime+tw.tick {
+	}
+
+	tw.mu.RLock()
+	currentTime := tw.currentTime
+	tw.mu.RUnlock()
+
+	if exp < currentTime+tw.tick {
 		// Already expired.
 		return false
-	} else if exp < tw.currentTime+tw.interval {
+	} else if exp < currentTime+tw.interval {
 		// Fits in this wheel. Compute bucket index.
 		virtualID := exp / tw.tick
 		bucketIdx := virtualID % tw.wheelSize
@@ -59,8 +63,8 @@ func (tw *TimingWheel) add(entry *TimerTaskEntry) bool {
 
 		// Set the bucket's expiration to the beginning of the tick window.
 		if bucket.SetExpiration(virtualID * tw.tick) {
-			// Bucket expiration changed — (re-)insert it into the delay queue.
-			tw.queue.Offer(bucket)
+			// Bucket expiration changed — notify the scheduler.
+			tw.scheduler.notify(bucket)
 		}
 
 		return true
@@ -68,7 +72,7 @@ func (tw *TimingWheel) add(entry *TimerTaskEntry) bool {
 		// Overflow to higher-level wheel.
 		tw.mu.Lock()
 		if tw.overflowWheel == nil {
-			tw.overflowWheel = newTimingWheel(tw.interval, tw.wheelSize, tw.currentTime, tw.queue)
+			tw.overflowWheel = newTimingWheel(tw.interval, tw.wheelSize, tw.currentTime, tw.scheduler)
 		}
 		tw.mu.Unlock()
 
@@ -83,12 +87,40 @@ func (tw *TimingWheel) advanceClock(expiration int64) {
 		tw.currentTime = expiration - (expiration % tw.tick)
 
 		// Propagate to overflow wheel.
-		tw.mu.Lock()
+		tw.mu.RLock()
 		overflow := tw.overflowWheel
-		tw.mu.Unlock()
+		tw.mu.RUnlock()
 
 		if overflow != nil {
 			overflow.advanceClock(tw.currentTime)
 		}
+	}
+}
+
+// advanceAndFlush advances the clock and flushes all expired buckets at every level.
+// Used by the ticker scheduler.
+func (tw *TimingWheel) advanceAndFlush(now int64, reinsert func(*TimerTaskEntry)) {
+	tw.mu.Lock()
+	currentTime := now - (now % tw.tick)
+	if currentTime <= tw.currentTime {
+		tw.mu.Unlock()
+		return
+	}
+	tw.currentTime = currentTime
+	tw.mu.Unlock()
+
+	for _, bucket := range tw.buckets {
+		if exp := bucket.Expiration(); exp != -1 && exp <= currentTime {
+			bucket.Flush(reinsert)
+		}
+	}
+
+	// Propagate to overflow wheel.
+	tw.mu.RLock()
+	overflow := tw.overflowWheel
+	tw.mu.RUnlock()
+
+	if overflow != nil {
+		overflow.advanceAndFlush(now, reinsert)
 	}
 }
